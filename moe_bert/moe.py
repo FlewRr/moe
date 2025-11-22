@@ -33,6 +33,8 @@ class BertMoELayer(BertLayer):
         self.intermediate = SwitchTransformersSparseMLP(moe_config)
         self.output = BertOutput(bert_config)
 
+        self.moe_top_k = moe_config.top_k
+
     def forward(self, hidden_states, *args, **kwargs):
         attention_mask = kwargs.pop("attention_mask", None)
         head_mask = kwargs.pop("head_mask", None)
@@ -57,7 +59,7 @@ class BertMoELayer(BertLayer):
         batch_size = hidden_states.size(0)
         seq_len = hidden_states.size(1)
         hidden_size = hidden_states.size(2)
-        top_k = getattr(self.intermediate.config, "top_k", 1)
+        top_k = self.moe_top_k
 
         if intermediate_output.dim() == 2:  # [batch*top_k*seq_len, hidden_size]?
             intermediate_output = intermediate_output.view(batch_size, seq_len, hidden_size)

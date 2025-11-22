@@ -1,4 +1,4 @@
-# train.py
+# train.py (обновлённая версия — без предварительной токенизации всего датасета)
 import os
 from datasets import load_dataset
 from transformers import (
@@ -15,13 +15,11 @@ from transformers import BertConfig
 
 def main():
     set_seed(42)
-
-    # --- 1. Загрузка конфигурации ---
     cfg = PretrainConfig()
 
-    # --- 2. Создание конфигурации модели BERT + MoE ---
+    # --- Модель и токенизатор ---
     model_config = BertConfig(
-        vocab_size=30522,  # как у bert-base-uncased
+        vocab_size=30522,
         hidden_size=cfg.bert_hidden_size,
         num_hidden_layers=cfg.bert_num_hidden_layers,
         num_attention_heads=cfg.bert_num_attention_heads,
@@ -31,30 +29,29 @@ def main():
         attention_probs_dropout_prob=0.1,
         max_position_embeddings=512,
         type_vocab_size=2,
-        initializer_range=0.02,
-        layer_norm_eps=1e-12,
         pad_token_id=0,
-        # Передаём MoE параметры как атрибуты конфига
         num_experts=cfg.num_experts,
-        moe_k=2,  # фиксировано, но можно вынести в PretrainConfig
+        moe_k=2,
     )
 
-    # --- 3. Инициализация модели и токенизатора ---
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer)
     model = BertMoEForMaskedLM(model_config)
 
-    print(f"Model initialized with {cfg.num_experts} experts per layer.")
+    print(f"Model initialized with {cfg.num_experts} experts.")
     print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # --- 4. Загрузка и подготовка датасета ---
-    print("Loading dataset...")
+    # --- ЗАГРУЗКА ДАТАСЕТА В STREAMING РЕЖИМЕ ---
+    print("Loading dataset in streaming mode...")
     dataset = load_dataset(
         cfg.dataset_name,
         cfg.dataset_config,
-        split="train[:0.1%]"  # ⚠️ Ограничение для теста! Уберите [:1%] для полного обучения
+        split="train",
+        streaming=True  # 🔥 ключевое изменение!
     )
 
+    # --- ФУНКЦИЯ ТОКЕНИЗАЦИИ (будет применяться лениво) ---
     def tokenize_function(examples):
+        # examples — dict с списками, например: {"text": ["..."]}
         return tokenizer(
             examples[cfg.text_column],
             truncation=True,
@@ -63,65 +60,62 @@ def main():
             return_special_tokens_mask=True,
         )
 
-    print("Tokenizing dataset...")
+    # Применяем токенизацию лениво (без сохранения)
     tokenized_dataset = dataset.map(
         tokenize_function,
         batched=True,
-        num_proc=4,
-        remove_columns=dataset.column_names,
-        desc="Tokenizing",
+        remove_columns=[cfg.text_column],  # удаляем исходный текст
     )
 
-    # Фильтруем слишком короткие последовательности (опционально)
-    tokenized_dataset = tokenized_dataset.filter(
-        lambda x: len(x["input_ids"]) >= cfg.seq_len // 2
-    )
+    # --- Фильтрация слишком коротких примеров (опционально, но осторожно в streaming!) ---
+    def filter_short(example):
+        return len(example["input_ids"]) >= cfg.seq_len // 2
 
-    # --- 5. Data collator для MLM ---
+    tokenized_dataset = tokenized_dataset.filter(filter_short)
+
+    # --- Data collator ---
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=cfg.masking_prob,
     )
 
-    # --- 6. Настройка обучения ---
+    # --- Training args ---
     training_args = TrainingArguments(
         output_dir=cfg.output_dir,
         overwrite_output_dir=True,
         max_steps=cfg.max_steps,
         per_device_train_batch_size=cfg.batch_size,
-        per_device_eval_batch_size=cfg.batch_size,
         gradient_accumulation_steps=1,
         learning_rate=cfg.lr,
         weight_decay=cfg.weight_decay,
         warmup_steps=cfg.warmup_steps,
         logging_steps=cfg.logging_steps,
         save_steps=cfg.save_steps,
-        eval_steps=cfg.eval_steps,
-        evaluation_strategy="steps" if cfg.eval_steps else "no",
         save_strategy="steps",
         load_best_model_at_end=False,
-        fp16=True,  # включить, если GPU поддерживает
-        dataloader_num_workers=4,
-        report_to="none",  # или "tensorboard", "wandb"
-        remove_unused_columns=False,  # важно при кастомных collator'ах
+        fp16=True,
+        dataloader_num_workers=2,  # можно 0–4, но в streaming лучше 0–2
+        remove_unused_columns=False,
+        report_to="none",
+        # ⚠️ ВАЖНО: отключаем shuffle для streaming (или используем буфер)
+        dataloader_drop_last=True,
     )
 
-    # --- 7. Создание Trainer ---
+    # --- Создаём Trainer ---
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_dataset,
-        eval_dataset=None,  # можно добавить отдельный split при необходимости
+        train_dataset=tokenized_dataset,  # ← streaming dataset!
         data_collator=data_collator,
         tokenizer=tokenizer,
     )
 
-    # --- 8. Запуск предобучения ---
-    print("Starting pretraining...")
+    # --- Обучение ---
+    print("Starting pretraining (streaming)...")
     trainer.train()
 
-    # --- 9. Сохранение финальной модели ---
+    # --- Сохранение ---
     final_dir = os.path.join(cfg.output_dir, "final_model")
     trainer.save_model(final_dir)
     tokenizer.save_pretrained(final_dir)

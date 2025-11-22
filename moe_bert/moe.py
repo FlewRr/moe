@@ -64,18 +64,40 @@ class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
         self.attention = BertAttention(config)
-        # промежуточный размер в MoE = hidden_size, чтобы BertOutput работал
-        self.intermediate = MoEBlock(config, num_experts=getattr(config, "num_experts", 4))
-        self.output = nn.Sequential(
-            nn.Linear(config.hidden_size, config.hidden_size),
-            nn.Dropout(config.hidden_dropout_prob)
+        self.intermediate = MoEBlock(
+            config,
+            num_experts=getattr(config, "num_experts", 4),
+            hidden_size=config.hidden_size,       # output MoE = hidden_size
+            intermediate_size=config.hidden_size  # чтобы BertOutput не ломался
         )
+        self.output = BertOutput(config)
 
-    def forward(self, hidden_states, **kwargs):
-        attention_output = self.attention(hidden_states, **kwargs)[0]
-        intermediate_output = self.intermediate(attention_output)  # теперь [B, S, hidden_size]
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        output_attentions=False
+    ):
+        # Attention
+        attention_outputs = self.attention(
+            hidden_states,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            output_attentions=output_attentions
+        )
+        attention_output = attention_outputs[0]
+
+        # MoE
+        intermediate_output = self.intermediate(attention_output)
+
+        # Output
         layer_output = self.output(intermediate_output, attention_output)
-        return (layer_output, )
+
+        outputs = (layer_output,)
+        if output_attentions:
+            outputs += (attention_outputs[1],)
+        return outputs
 
 
 class BertMoEEncoder(BertEncoder):

@@ -20,8 +20,8 @@ class PretrainConfig:
     eval_steps = 2000
 
     # BERT / MoE параметры
-    bert_hidden_size = 256
-    bert_intermediate_size = 1024
+    bert_hidden_size = 1024
+    bert_intermediate_size = 4096
     bert_num_hidden_layers = 4
     bert_num_attention_heads = 4
     num_experts = 4

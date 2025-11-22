@@ -66,9 +66,7 @@ class BertMoELayer(BertLayer):
         self.attention = BertAttention(config)
         self.intermediate = MoEBlock(
             config,
-            num_experts=getattr(config, "num_experts", 4),
-            hidden_size=config.hidden_size,       # output MoE = hidden_size
-            intermediate_size=config.hidden_size  # чтобы BertOutput не ломался
+            num_experts=getattr(config, "num_experts", 4)
         )
         self.output = BertOutput(config)
 

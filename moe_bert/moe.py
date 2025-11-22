@@ -65,29 +65,36 @@ class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
         self.attention = BertAttention(config)
-        self.intermediate = MoEBlock(config, num_experts=getattr(config, "num_experts", 4))
-        self.output = nn.LayerNorm(config.hidden_size)
+        self.intermediate = MoEBlock(
+            config,
+            num_experts=getattr(config, "num_experts", 4)
+        )
+        self.output = BertOutput(config)
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False):
-        # 1. Self-attention
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        output_attentions=False,
+    ):
         attention_outputs = self.attention(
             hidden_states,
-            attention_mask=attention_mask,
+            attention_mask,
             head_mask=head_mask,
-            output_attentions=output_attentions
+            output_attentions=output_attentions,
         )
         attention_output = attention_outputs[0]
 
-        # 2. MoE FFN
         intermediate_output = self.intermediate(attention_output)
 
-        # 3. Residual + LayerNorm
-        layer_output = self.output(intermediate_output + attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
 
-        outputs = (layer_output,)
-        if output_attentions:
-            outputs += attention_outputs[1:]  # добавляем attention если нужно
+        outputs = (layer_output,) + attention_outputs[1:]  # сохраним все дополнительные выходы, если есть
         return outputs
+
 
 
 class BertMoEEncoder(BertEncoder):

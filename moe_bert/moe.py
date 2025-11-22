@@ -1,82 +1,84 @@
-from transformers.models.switch_transformers.modeling_switch_transformers import (
-    SwitchTransformersSparseMLP,
-)
-from transformers.models.switch_transformers import SwitchTransformersConfig
-from transformers.models.bert.modeling_bert import (
-    BertModel,
-    BertLayer,
-    BertEncoder,
-    BertAttention,
-    BertIntermediate,
-    BertOutput,
-    BertConfig
-)
-
-from torch import nn
-
+# moe.py
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch import nn
+from transformers.models.bert.modeling_bert import BertModel, BertLayer, BertConfig, BertEncoder, BertEmbeddings
 
-class BertMoELayer(BertLayer):
-    def __init__(self, bert_config, moe_config=None):
-        super().__init__(bert_config)
-        self.attention = BertAttention(bert_config)
-        if moe_config is None:
-            moe_config = SwitchTransformersConfig(
-                hidden_size=bert_config.hidden_size,
-                intermediate_size=bert_config.intermediate_size,
-                num_experts=getattr(bert_config, "num_experts", 1),
-                expert_capacity=getattr(bert_config, "expert_capacity", 32),
-                top_k=getattr(bert_config, "top_k", 1),
-            )
-        self.intermediate = SwitchTransformersSparseMLP(moe_config)
-        self.output = BertOutput(bert_config)
+# ----------------------------
+# Простая MoE с Top-K
+# ----------------------------
+class TopKMoE(nn.Module):
+    def __init__(self, hidden_size, intermediate_size, num_experts=4, top_k=1, dropout=0.0):
+        super().__init__()
+        self.num_experts = num_experts
+        self.top_k = top_k
+        self.dropout = nn.Dropout(dropout)
 
-        self.moe_top_k = moe_config.top_k
+        # Эксперты — обычный feed-forward
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(hidden_size, intermediate_size),
+                nn.GELU(),
+                nn.Linear(intermediate_size, hidden_size),
+            ) for _ in range(num_experts)
+        ])
 
-    def forward(self, hidden_states, *args, **kwargs):
-        attention_mask = kwargs.pop("attention_mask", None)
-        head_mask = kwargs.pop("head_mask", None)
-        output_attentions = kwargs.pop("output_attentions", False)
-        kwargs.pop("encoder_attention_mask", None)
-        kwargs.pop("output_hidden_states", None)
+        # Гейтинг: learnable веса для маршрутизации
+        self.gate = nn.Linear(hidden_size, num_experts, bias=True)
 
-        self_outputs = self.attention(
-            hidden_states,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-            **kwargs  # теперь kwargs не содержит output_attentions
+    def forward(self, x):
+        # x: [batch, seq_len, hidden_size]
+        batch, seq_len, hidden = x.size()
+        # Гейтинг: logits экспертов
+        gate_logits = self.gate(x)  # [batch, seq_len, num_experts]
+        topk_vals, topk_idx = torch.topk(gate_logits, self.top_k, dim=-1)  # top_k экспертов
+        topk_scores = torch.softmax(topk_vals, dim=-1)
+
+        # Подготавливаем выход
+        out = torch.zeros_like(x)
+
+        # Простейшая реализация Top-K: суммируем вклад выбранных экспертов
+        for i in range(self.top_k):
+            idx = topk_idx[..., i]  # [batch, seq_len]
+            score = topk_scores[..., i].unsqueeze(-1)  # [batch, seq_len, 1]
+            expert_out = torch.stack([self.experts[e](x[b]) for b, e in enumerate(idx[:, 0])], dim=0)
+            # Применяем вес gating
+            out += self.dropout(expert_out * score)
+
+        return out
+
+# ----------------------------
+# Подменяем FFN в BertLayer
+# ----------------------------
+class BertLayerMoE(BertLayer):
+    def __init__(self, config: BertConfig):
+        super().__init__(config)
+        self.moe = TopKMoE(
+            hidden_size=config.hidden_size,
+            intermediate_size=config.intermediate_size,
+            num_experts=getattr(config, "num_experts", 1),
+            top_k=getattr(config, "top_k", 1),
+            dropout=getattr(config, "dropout", 0.0)
         )
+        # Отключаем стандартный FFN
+        self.intermediate = None
+        self.output = None
 
-        attention_output = self_outputs[0]
+    def forward(self, hidden_states, attention_mask=None, **kwargs):
+        # стандартное внимание
+        attention_output = self.attention(hidden_states, attention_mask, **kwargs)[0]
+        # заменяем FFN на MoE
+        layer_output = self.moe(attention_output)
+        return layer_output, None
 
-        intermediate_output = self.intermediate(attention_output)
-        if isinstance(intermediate_output, tuple):
-            intermediate_output = intermediate_output[0]
-
-        batch_size = hidden_states.size(0)
-        seq_len = hidden_states.size(1)
-        hidden_size = hidden_states.size(2)
-        top_k = self.moe_top_k
-
-        if intermediate_output.dim() == 2:  # [batch*top_k*seq_len, hidden_size]?
-            intermediate_output = intermediate_output.view(batch_size, seq_len, hidden_size)
-        elif intermediate_output.dim() == 3 and intermediate_output.size(0) == batch_size * top_k:
-            intermediate_output = intermediate_output.view(batch_size, seq_len, hidden_size)
-    
-        layer_output = self.output(intermediate_output, attention_output)
-        outputs = (layer_output,) + self_outputs[1:]
-        return outputs
-
-
-class BertMoEEncoder(BertEncoder):
-    def __init__(self, config):
-        super().__init__(config)
-        self.layer = nn.ModuleList([BertMoELayer(config) for _ in range(config.num_hidden_layers)])
-
+# ----------------------------
+# Bert с MoE
+# ----------------------------
 class BertMoEModel(BertModel):
-    def __init__(self, config):
+    def __init__(self, config: BertConfig):
         super().__init__(config)
-        self.encoder = BertMoEEncoder(config)
+        # embeddings оставляем стандартные
+        self.embeddings = BertEmbeddings(config)
+        # подменяем все слои encoder на MoE
+        self.encoder = BertEncoder(config)
+        for i in range(config.num_hidden_layers):
+            self.encoder.layer[i] = BertLayerMoE(config)

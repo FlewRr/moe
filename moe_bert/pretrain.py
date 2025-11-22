@@ -67,7 +67,6 @@ def get_model(cfg, pretrained_path=None):
         expert_capacity=getattr(cfg, "expert_capacity", 32),
         top_k=getattr(cfg, "top_k", 1)
     )
-    config.num_experts = getattr(cfg, "num_experts", 1)
 
     backbone = BertMoEModel(config)
     model = BertForMaskedLM(config)

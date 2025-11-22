@@ -51,20 +51,20 @@ def main():
 
     # --- ФУНКЦИЯ ТОКЕНИЗАЦИИ (будет применяться лениво) ---
     def tokenize_function(examples):
-        # examples — dict с списками, например: {"text": ["..."]}
         return tokenizer(
             examples[cfg.text_column],
             truncation=True,
-            padding=False,
+            padding=False,  # collator сам сделает padding до batch max
             max_length=cfg.seq_len,
             return_special_tokens_mask=True,
         )
 
-    # Применяем токенизацию лениво (без сохранения)
+    # Применяем токенизацию и удаляем ВСЕ исходные колонки
+    original_columns = dataset.column_names  # ['id', 'text', 'url'] — для wikipedia
     tokenized_dataset = dataset.map(
         tokenize_function,
         batched=True,
-        remove_columns=[cfg.text_column],  # удаляем исходный текст
+        remove_columns=original_columns,  # ← удаляем ВСЁ, кроме output tokenizer'а
     )
 
     # --- Фильтрация слишком коротких примеров (опционально, но осторожно в streaming!) ---

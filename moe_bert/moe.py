@@ -13,12 +13,63 @@ from transformers.models.bert.modeling_bert import (
 
 from torch import nn
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class MoEBlock(nn.Module):
+    def __init__(self, config, num_experts=4, hidden_size=None, intermediate_size=None):
+        super().__init__()
+
+        self.num_experts = num_experts
+        hidden = hidden_size or config.hidden_size
+        inter = intermediate_size or config.intermediate_size
+
+        self.gate = nn.Linear(hidden, num_experts)
+
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(hidden, inter),
+                nn.GELU(),
+                nn.Linear(inter, hidden),
+            )
+            for _ in range(num_experts)
+        ])
+
+    def forward(self, x):
+        B, S, H = x.size()
+
+        logits = self.gate(x)
+        gates = F.softmax(logits, dim=-1)
+
+        indices = torch.argmax(gates, dim=-1)    # [B, S]
+
+        output = torch.zeros_like(x)
+
+        for expert_id in range(self.num_experts):
+            mask = (indices == expert_id)  # [B, S]
+
+            if mask.sum() == 0:
+                continue
+
+            tokens = x[mask]  # [N, hidden]
+
+            processed = self.experts[expert_id](tokens)
+            output[mask] = processed
+
+        return output
+
+
 class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
 
         self.attention = BertAttention(config)
-        self.intermediateм = SwitchTransformersSparseMLP(config)
+        self.intermediate = MoEBlock(
+            config,
+            num_experts=config.num_experts if hasattr(config, "num_experts") else 4
+        )
         self.output = BertOutput(config)
 
 
@@ -29,7 +80,6 @@ class BertMoEEncoder(BertEncoder):
         self.layer = nn.ModuleList(
             [BertMoELayer(config) for _ in range(config.num_hidden_layers)]
         )
-
 
 class BertMoEModel(BertModel):
     def __init__(self, config):

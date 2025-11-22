@@ -39,13 +39,13 @@ def get_model(cfg):
         num_attention_heads=cfg.bert_num_attention_heads,
     )
 
+    config.num_experts = cfg.num_experts
+
     backbone = BertMoEModel(config)
 
     model = BertForMaskedLM(config)
     model.bert = backbone
-
     return model
-
 
 def pretrain(cfg: PretrainConfig):
     # 1. Загружаем датасет
@@ -66,11 +66,13 @@ def pretrain(cfg: PretrainConfig):
     ds = ds.map(
         tokenize_batch,
         batched=True,
-        num_proc=4,
+        num_proc=16,
+        batch_size=1000
     )
 
     # Оставляем только нужные колонки
     ds = ds.remove_columns([c for c in ds.column_names if c not in ["input_ids", "attention_mask"]])
+    ds = ds.with_format("torch")
 
     # 4. Коллатор для MLM
     collator = DataCollatorForLanguageModeling(

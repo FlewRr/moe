@@ -36,16 +36,31 @@ class WikiStreamDataset(IterableDataset):
                 "attention_mask": tokenized["attention_mask"].squeeze(0)
             }
 
+class BertMoEConfig(BertConfig):
+    def __init__(
+        self,
+        num_experts=4,
+        expert_capacity=32,
+        top_k=1,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.num_experts = num_experts
+        self.expert_capacity = expert_capacity
+        self.top_k = top_k
 
 # ----------------------------
 # Модель
 # ----------------------------
 def get_model(cfg, pretrained_path=None):
-    config = BertConfig(
+    config = BertMoEConfig(
         hidden_size=cfg.bert_hidden_size,
         intermediate_size=cfg.bert_intermediate_size,
         num_hidden_layers=cfg.bert_num_hidden_layers,
         num_attention_heads=cfg.bert_num_attention_heads,
+        num_experts=getattr(cfg, "num_experts", 1),
+        expert_capacity=getattr(cfg, "expert_capacity", 32),
+        top_k=getattr(cfg, "top_k", 1)
     )
     config.num_experts = getattr(cfg, "num_experts", 1)
 

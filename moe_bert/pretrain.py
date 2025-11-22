@@ -51,7 +51,7 @@ def main():
     dataset = load_dataset(
         cfg.dataset_name,
         cfg.dataset_config,
-        split="train[:1%]"  # ⚠️ Ограничение для теста! Уберите [:1%] для полного обучения
+        split="train[:0.1%]"  # ⚠️ Ограничение для теста! Уберите [:1%] для полного обучения
     )
 
     def tokenize_function(examples):

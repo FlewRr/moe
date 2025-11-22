@@ -66,8 +66,7 @@ def pretrain(cfg: PretrainConfig):
     ds = ds.map(
         tokenize_batch,
         batched=True,
-        num_proc=16,
-        batch_size=1000
+        num_proc=16
     )
 
     # Оставляем только нужные колонки

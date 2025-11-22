@@ -25,8 +25,6 @@ class BertMoELayer(BertLayer):
             config.hidden_size,                          # hidden_size
             config.intermediate_size,                    # intermediate_size
             getattr(config, "num_experts", 4),          # num_experts
-            top_k=1,                                     # optional
-            dropout=0.0                                  # optional
         )
         self.output = BertOutput(config)
 

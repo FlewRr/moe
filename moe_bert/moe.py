@@ -54,6 +54,16 @@ class BertMoELayer(BertLayer):
         if isinstance(intermediate_output, tuple):
             intermediate_output = intermediate_output[0]
 
+        batch_size = hidden_states.size(0)
+        seq_len = hidden_states.size(1)
+        hidden_size = hidden_states.size(2)
+        top_k = getattr(self.intermediate.config, "top_k", 1)
+
+        if intermediate_output.dim() == 2:  # [batch*top_k*seq_len, hidden_size]?
+            intermediate_output = intermediate_output.view(batch_size, seq_len, hidden_size)
+        elif intermediate_output.dim() == 3 and intermediate_output.size(0) == batch_size * top_k:
+            intermediate_output = intermediate_output.view(batch_size, seq_len, hidden_size)
+    
         layer_output = self.output(intermediate_output, attention_output)
         outputs = (layer_output,) + self_outputs[1:]
         return outputs

@@ -64,6 +64,9 @@ class MoEFFN(nn.Module):
         return final_output.view(batch_size, seq_len, hidden_dim)
 
 
+from transformers.models.bert.modeling_bert import BertLayer
+import torch.nn as nn
+
 class BertLayerWithMoE(BertLayer):
     def __init__(self, config):
         super().__init__(config)
@@ -74,24 +77,25 @@ class BertLayerWithMoE(BertLayer):
         self.moe_ffn = MoEFFN(
             hidden_size=config.hidden_size,
             num_experts=getattr(config, "num_experts", 4),
-            expert_size=config.intermediate_size,
+            expert_size=config.intermediate_size,  # используется внутри MoE
             k=getattr(config, "moe_k", 2),
             dropout_prob=config.hidden_dropout_prob,
         )
-        # Оставляем LayerNorm из оригинального BERT
-        self.output = BertOutput(config)
+
+        # Вместо BertOutput — создаём свой простой LayerNorm + Dropout
+        self.moe_output_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.moe_output_dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(
         self,
         hidden_states,
         attention_mask=None,
         head_mask=None,
-        encoder_hidden_states=None,      # для совместимости с encoder-decoder
-        encoder_attention_mask=None,     # для совместимости
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
         output_attentions=False,
         **kwargs,
     ):
-        # В BERT encoder_* всегда None — игнорируем
         self_attn_output = self.attention(
             hidden_states,
             attention_mask=attention_mask,
@@ -99,8 +103,13 @@ class BertLayerWithMoE(BertLayer):
             output_attentions=output_attentions,
         )
         attn_output = self_attn_output[0]
-        moe_output = self.moe_ffn(attn_output)
-        layer_output = self.output(moe_output, attn_output)
+
+        moe_output = self.moe_ffn(attn_output)  # [B, L, hidden_size]
+
+        # Residual + Dropout + LayerNorm (как в оригинальном BERT)
+        moe_output = self.moe_output_dropout(moe_output)
+        layer_output = self.moe_output_layer_norm(attn_output + moe_output)
+
         outputs = (layer_output,) + self_attn_output[1:]
         return outputs
 

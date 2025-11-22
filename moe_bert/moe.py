@@ -64,25 +64,38 @@ class MoEBlock(nn.Module):
 class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
-
         self.attention = BertAttention(config)
-        self.intermediate = MoEBlock(
-            config,
-            num_experts=config.num_experts if hasattr(config, "num_experts") else 4
+        self.intermediate = MoEBlock(config, num_experts=getattr(config, "num_experts", 4))
+        self.output = nn.LayerNorm(config.hidden_size)
+
+    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False):
+        # 1. Self-attention
+        attention_outputs = self.attention(
+            hidden_states,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            output_attentions=output_attentions
         )
-        self.output = BertOutput(config)
+        attention_output = attention_outputs[0]
+
+        # 2. MoE FFN
+        intermediate_output = self.intermediate(attention_output)
+
+        # 3. Residual + LayerNorm
+        layer_output = self.output(intermediate_output + attention_output)
+
+        outputs = (layer_output,)
+        if output_attentions:
+            outputs += attention_outputs[1:]  # добавляем attention если нужно
+        return outputs
 
 
 class BertMoEEncoder(BertEncoder):
     def __init__(self, config):
         super().__init__(config)
-
-        self.layer = nn.ModuleList(
-            [BertMoELayer(config) for _ in range(config.num_hidden_layers)]
-        )
+        self.layer = nn.ModuleList([BertMoELayer(config) for _ in range(config.num_hidden_layers)])
 
 class BertMoEModel(BertModel):
     def __init__(self, config):
         super().__init__(config)
-
         self.encoder = BertMoEEncoder(config)

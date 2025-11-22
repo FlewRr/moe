@@ -5,10 +5,12 @@ from transformers import (
     DataCollatorForLanguageModeling, Trainer, TrainingArguments
 )
 from moe import BertMoEModel
+import torch
 
 cfg = PretrainConfig()
 
-def get_model(cfg):
+
+def get_model(cfg, pretrained_path=None):
     config = BertConfig(
         hidden_size=cfg.bert_hidden_size,
         intermediate_size=cfg.bert_intermediate_size,
@@ -16,22 +18,30 @@ def get_model(cfg):
         num_attention_heads=cfg.bert_num_attention_heads,
     )
     config.num_experts = getattr(cfg, "num_experts", 1)
+
+    # создаём MoE-BERT
     backbone = BertMoEModel(config)
+
     model = BertForMaskedLM(config)
     model.bert = backbone
+
+    # подгрузка pretrained весов
+    if pretrained_path:
+        state_dict = torch.load(pretrained_path, map_location="cpu")
+        model.bert.load_state_dict(state_dict, strict=False)
+        print(f"Loaded pretrained weights from {pretrained_path}")
+
     return model
 
-def pretrain(cfg: PretrainConfig, quick_test=False):
+
+def pretrain(cfg: PretrainConfig, quick_test=False, pretrained_path=None):
     # ========================
     # 1. Загружаем датасет
     # ========================
+    ds = load_dataset(cfg.dataset_name, cfg.dataset_config, split="train", streaming=True)
+
     if quick_test:
-        # маленький срез для теста
-        ds = load_dataset(cfg.dataset_name, cfg.dataset_config, split="train", streaming=True)
-        ds = ds.take(20000)
-    else:
-        # полный датасет с потоковой загрузкой
-        ds = load_dataset(cfg.dataset_name, cfg.dataset_config, split="train", streaming=True)
+        ds = ds.take(20000)  # быстрый тест на 20k примерах
 
     # ========================
     # 2. Токенизатор
@@ -39,9 +49,19 @@ def pretrain(cfg: PretrainConfig, quick_test=False):
     tokenizer = BertTokenizerFast.from_pretrained(cfg.tokenizer)
 
     def tokenize_batch(batch):
-        return tokenizer(batch[cfg.text_column], truncation=True, max_length=cfg.seq_len, padding=False)
+        return tokenizer(
+            batch[cfg.text_column],
+            truncation=True,
+            max_length=cfg.seq_len,
+            padding="max_length"
+        )
 
     ds = ds.map(tokenize_batch, batched=True)
+    ds.set_format(type="torch", columns=["input_ids", "attention_mask"])
+
+    # Для Trainer streaming не поддерживается напрямую — превращаем в list для быстрого теста
+    if quick_test:
+        ds = list(ds)
 
     # ========================
     # 3. Коллатор для MLM
@@ -55,7 +75,7 @@ def pretrain(cfg: PretrainConfig, quick_test=False):
     # ========================
     # 4. Модель
     # ========================
-    model = get_model(cfg)
+    model = get_model(cfg, pretrained_path=pretrained_path)
 
     # ========================
     # 5. TrainingArguments
@@ -94,4 +114,4 @@ def pretrain(cfg: PretrainConfig, quick_test=False):
 
 if __name__ == "__main__":
     # быстрый тест
-    pretrain(cfg, quick_test=True)
+    pretrain(cfg, quick_test=True, pretrained_path=None)

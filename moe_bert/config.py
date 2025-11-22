@@ -25,3 +25,32 @@ class PretrainConfig:
     bert_num_hidden_layers = 4
     bert_num_attention_heads = 4
     num_experts = 4
+
+
+class ClassificationConfig:
+    # Пути
+    backbone_path = "./final_model/pytorch_model.bin"  # или ваш .pt файл
+    dataset_path = "your_dataset"  # например, "json", "csv", или HuggingFace dataset
+    dataset_split = "train"
+    text_column = "text"
+    label_columns = ["label1", "label2", "label3", "label4", "label5", "label6"]  # ← 6 меток
+
+    # Модель
+    num_labels = 6
+    tokenizer = "bert-base-uncased"
+    hidden_size = 256
+    num_hidden_layers = 4
+    num_attention_heads = 4
+    intermediate_size = 1024
+    num_experts = 4
+
+    # Обучение
+    output_dir = "./cls_output"
+    seq_len = 128
+    batch_size = 32
+    lr = 2e-5
+    weight_decay = 0.01
+    num_train_epochs = 3
+    logging_steps = 100
+    save_steps = 500
+    eval_steps = 500

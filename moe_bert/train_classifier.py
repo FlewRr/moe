@@ -1,4 +1,3 @@
-# train_cls.py
 import torch
 from datasets import load_dataset
 from transformers import (
@@ -9,7 +8,7 @@ from transformers import (
     DataCollatorWithPadding,
 )
 from config import ClassificationConfig
-from model_cls import BertMoEForMultiLabelClassification
+from classifier import BertMoEForMultiLabelClassification
 from transformers import BertConfig
 
 
@@ -21,8 +20,9 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer)
 
     # --- 2. Датасет ---
-    dataset = load_dataset(cfg.dataset_path, split=cfg.dataset_split)
+    dataset = load_dataset("csv", data_files=cfg.dataset_path, split="train")
     # Должен содержать: "text", и 6 колонок с бинарными метками (0/1)
+    # надо считать из kaggle локально и дать путь
 
     def tokenize_and_align_labels(examples):
         tokenized = tokenizer(

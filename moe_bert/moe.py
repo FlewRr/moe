@@ -19,12 +19,11 @@ import torch.nn.functional as F
 
 
 class MoEBlock(nn.Module):
-    def __init__(self, config, num_experts=4, hidden_size=None, intermediate_size=None):
+    def __init__(self, config, num_experts=4):
         super().__init__()
-
         self.num_experts = num_experts
-        hidden = hidden_size or config.hidden_size
-        inter = intermediate_size or config.intermediate_size
+        hidden = config.hidden_size
+        inter = config.intermediate_size
 
         self.gate = nn.Linear(hidden, num_experts)
 
@@ -32,33 +31,34 @@ class MoEBlock(nn.Module):
             nn.Sequential(
                 nn.Linear(hidden, inter),
                 nn.GELU(),
-                nn.Linear(inter, hidden),
+                nn.Linear(inter, hidden),  # ключ! выход всегда hidden_size
             )
             for _ in range(num_experts)
         ])
 
     def forward(self, x):
         B, S, H = x.size()
-
-        logits = self.gate(x)
+        logits = self.gate(x)  # [B, S, num_experts]
         gates = F.softmax(logits, dim=-1)
-
-        indices = torch.argmax(gates, dim=-1)    # [B, S]
+        indices = torch.argmax(gates, dim=-1)  # [B, S]
 
         output = torch.zeros_like(x)
 
         for expert_id in range(self.num_experts):
+            # создаём маску и координаты для scatter
             mask = (indices == expert_id)  # [B, S]
-
             if mask.sum() == 0:
                 continue
+            # flatten B, S
+            flat_mask = mask.view(-1)
+            tokens = x.view(-1, H)[flat_mask]  # [N, hidden]
+            processed = self.experts[expert_id](tokens)  # [N, hidden]
 
-            tokens = x[mask]  # [N, hidden]
+            # scatter обратно в правильную форму
+            output.view(-1, H)[flat_mask] = processed
 
-            processed = self.experts[expert_id](tokens)
-            output[mask] = processed
+        return output  # [B, S, hidden_size] корректно
 
-        return output
 
 
 class BertMoELayer(BertLayer):

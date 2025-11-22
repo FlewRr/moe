@@ -75,7 +75,8 @@ class BertMoELayer(BertLayer):
         hidden_states,
         attention_mask=None,
         head_mask=None,
-        output_attentions=False
+        output_attentions=False,
+        **kwargs
     ):
         # Attention
         attention_outputs = self.attention(

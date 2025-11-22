@@ -37,6 +37,8 @@ class BertMoELayer(BertLayer):
         attention_mask = kwargs.pop("attention_mask", None)
         head_mask = kwargs.pop("head_mask", None)
         output_attentions = kwargs.pop("output_attentions", False)
+        kwargs.pop("encoder_attention_mask", None)
+        kwargs.pop("output_hidden_states", None)
 
         self_outputs = self.attention(
             hidden_states,

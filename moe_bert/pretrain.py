@@ -44,8 +44,6 @@ class BertMoEConfig(BertConfig):
         top_k=1,
         router_bias=True,
         dropout=0.0,
-        hidden_act="gelu",
-        layer_norm_eps=1e-12,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -54,8 +52,6 @@ class BertMoEConfig(BertConfig):
         self.top_k = top_k
         self.router_bias = router_bias
         self.dropout = dropout
-        self.hidden_act = hidden_act
-        self.layer_norm_eps = layer_norm_eps
 
 
 # ----------------------------

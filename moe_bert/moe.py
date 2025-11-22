@@ -1,6 +1,7 @@
 from transformers.models.switch_transformers.modeling_switch_transformers import (
     SwitchTransformersSparseMLP,
 )
+from transformers.models.switch_transformers import SwitchTransformersConfig
 from transformers.models.bert.modeling_bert import (
     BertModel,
     BertLayer,
@@ -18,11 +19,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class BertMoELayer(BertLayer):
-    def __init__(self, config):
-        super().__init__(config)
-        self.attention = BertAttention(config)
-        self.intermediate = SwitchTransformersSparseMLP(config)
-        self.output = BertOutput(config)
+    def __init__(self, bert_config, moe_config=None):
+        super().__init__(bert_config)
+        self.attention = BertAttention(bert_config)
+        if moe_config is None:
+            moe_config = SwitchTransformersConfig(
+                hidden_size=bert_config.hidden_size,
+                intermediate_size=bert_config.intermediate_size,
+                num_experts=getattr(bert_config, "num_experts", 1),
+                expert_capacity=getattr(bert_config, "expert_capacity", 32),
+                top_k=getattr(bert_config, "top_k", 1),
+            )
+        self.intermediate = SwitchTransformersSparseMLP(moe_config)
+        self.output = BertOutput(bert_config)
 
 
 class BertMoEEncoder(BertEncoder):

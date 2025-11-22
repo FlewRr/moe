@@ -33,7 +33,12 @@ class BertMoELayer(BertLayer):
         self.intermediate = SwitchTransformersSparseMLP(moe_config)
         self.output = BertOutput(bert_config)
 
-    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False, **kwargs):
+    def forward(self, hidden_states, *args, **kwargs):
+        # достаём из kwargs то, что нужно для attention
+        attention_mask = kwargs.get("attention_mask", None)
+        head_mask = kwargs.get("head_mask", None)
+        output_attentions = kwargs.get("output_attentions", False)
+
         # Attention
         self_outputs = self.attention(
             hidden_states,

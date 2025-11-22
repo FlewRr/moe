@@ -101,7 +101,9 @@ class BertLayerWithMoE(BertLayer):
         attention_mask=None,
         head_mask=None,
         output_attentions=False,
+        **kwargs,  # ← принимаем всё лишнее (включая encoder_attention_mask)
     ):
+        # Игнорируем encoder_attention_mask, encoder_hidden_states и т.д.
         self_attn_output = self.attention(
             hidden_states,
             attention_mask=attention_mask,

@@ -33,6 +33,28 @@ class BertMoELayer(BertLayer):
         self.intermediate = SwitchTransformersSparseMLP(moe_config)
         self.output = BertOutput(bert_config)
 
+    def forward(self, hidden_states, attention_mask=None, head_mask=None, output_attentions=False, **kwargs):
+        # Attention
+        self_outputs = self.attention(
+            hidden_states,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            output_attentions=output_attentions,
+            **kwargs
+        )
+        attention_output = self_outputs[0]
+
+        # Intermediate (MoE)
+        intermediate_output = self.intermediate(attention_output)
+        if isinstance(intermediate_output, tuple):
+            intermediate_output = intermediate_output[0]  # берём только Tensor
+
+        # Output
+        layer_output = self.output(intermediate_output, attention_output)
+        outputs = (layer_output,) + self_outputs[1:]  # preserve attentions if any
+        return outputs
+
+
 
 class BertMoEEncoder(BertEncoder):
     def __init__(self, config):

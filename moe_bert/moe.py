@@ -133,51 +133,51 @@ class BertMoEForMaskedLM(BertPreTrainedModel):
 
         self.post_init()
 
-def forward(
-    self,
-    input_ids=None,
-    attention_mask=None,
-    token_type_ids=None,
-    position_ids=None,
-    head_mask=None,
-    inputs_embeds=None,
-    output_attentions=None,
-    output_hidden_states=None,
-    return_dict=None,
-    labels=None,
-    **kwargs  # ← ловим всё остальное, но НЕ передаём в bert
-):
-    # Фильтруем только аргументы, которые принимает BertModel
-    bert_kwargs = dict(
-        input_ids=input_ids,
-        attention_mask=attention_mask,
-        token_type_ids=token_type_ids,
-        position_ids=position_ids,
-        head_mask=head_mask,
-        inputs_embeds=inputs_embeds,
-        output_attentions=output_attentions,
-        output_hidden_states=output_hidden_states,
-        return_dict=return_dict,
-    )
-    # Убираем None-значения, если хотите (не обязательно)
-    bert_kwargs = {k: v for k, v in bert_kwargs.items() if v is not None}
-
-    outputs = self.bert(**bert_kwargs)
-
-    sequence_output = outputs.last_hidden_state  # [B, L, H]
-    prediction_scores = self.cls(sequence_output)  # [B, L, vocab_size]
-
-    loss = None
-    if labels is not None:
-        loss_fct = nn.CrossEntropyLoss()
-        loss = loss_fct(
-            prediction_scores.view(-1, self.config.vocab_size),
-            labels.view(-1)
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        labels=None,
+        **kwargs  # ← ловим всё остальное, но НЕ передаём в bert
+    ):
+        # Фильтруем только аргументы, которые принимает BertModel
+        bert_kwargs = dict(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
+        # Убираем None-значения, если хотите (не обязательно)
+        bert_kwargs = {k: v for k, v in bert_kwargs.items() if v is not None}
 
-    return {
-        "loss": loss,
-        "logits": prediction_scores,
-        "hidden_states": outputs.hidden_states,
-        "attentions": outputs.attentions,
-    }
+        outputs = self.bert(**bert_kwargs)
+
+        sequence_output = outputs.last_hidden_state  # [B, L, H]
+        prediction_scores = self.cls(sequence_output)  # [B, L, vocab_size]
+
+        loss = None
+        if labels is not None:
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(
+                prediction_scores.view(-1, self.config.vocab_size),
+                labels.view(-1)
+            )
+
+        return {
+            "loss": loss,
+            "logits": prediction_scores,
+            "hidden_states": outputs.hidden_states,
+            "attentions": outputs.attentions,
+        }

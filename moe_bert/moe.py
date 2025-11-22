@@ -34,31 +34,27 @@ class BertMoELayer(BertLayer):
         self.output = BertOutput(bert_config)
 
     def forward(self, hidden_states, *args, **kwargs):
-        # достаём из kwargs то, что нужно для attention
-        attention_mask = kwargs.get("attention_mask", None)
-        head_mask = kwargs.get("head_mask", None)
-        output_attentions = kwargs.get("output_attentions", False)
+        attention_mask = kwargs.pop("attention_mask", None)
+        head_mask = kwargs.pop("head_mask", None)
+        output_attentions = kwargs.pop("output_attentions", False)
 
-        # Attention
         self_outputs = self.attention(
             hidden_states,
             attention_mask=attention_mask,
             head_mask=head_mask,
             output_attentions=output_attentions,
-            **kwargs
+            **kwargs  # теперь kwargs не содержит output_attentions
         )
+
         attention_output = self_outputs[0]
 
-        # Intermediate (MoE)
         intermediate_output = self.intermediate(attention_output)
         if isinstance(intermediate_output, tuple):
-            intermediate_output = intermediate_output[0]  # берём только Tensor
+            intermediate_output = intermediate_output[0]
 
-        # Output
         layer_output = self.output(intermediate_output, attention_output)
-        outputs = (layer_output,) + self_outputs[1:]  # preserve attentions if any
+        outputs = (layer_output,) + self_outputs[1:]
         return outputs
-
 
 
 class BertMoEEncoder(BertEncoder):

@@ -21,12 +21,12 @@ class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
         self.attention = BertAttention(config)
-        self.intermediate = SwitchTransformersSparseMLP(
-            d_model=config.hidden_size,
-            d_ff=config.intermediate_size,
-            num_experts=getattr(config, "num_experts", 4),
-            top_k=1,
-            dropout=0.0
+        self.intermediate = self.intermediate = SwitchTransformersSparseMLP(
+            config.hidden_size,                          # hidden_size
+            config.intermediate_size,                    # intermediate_size
+            getattr(config, "num_experts", 4),          # num_experts
+            top_k=1,                                     # optional
+            dropout=0.0                                  # optional
         )
         self.output = BertOutput(config)
 

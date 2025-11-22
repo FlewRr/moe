@@ -23,7 +23,7 @@ class MoEBlock(nn.Module):
         super().__init__()
         self.num_experts = num_experts
         hidden = config.hidden_size
-        inter = config.intermediate_size
+        inter = config.hidden_size
 
         self.gate = nn.Linear(hidden, num_experts)
 
@@ -60,41 +60,22 @@ class MoEBlock(nn.Module):
         return output  # [B, S, hidden_size] корректно
 
 
-
 class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
         self.attention = BertAttention(config)
+        # промежуточный размер в MoE = hidden_size, чтобы BertOutput работал
         self.intermediate = MoEBlock(config, num_experts=getattr(config, "num_experts", 4))
-        self.output = BertOutput(config)
-
-    def forward(
-        self,
-        hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        output_attentions=False,
-        **kwargs
-    ):
-        # Прокидываем всё в attention
-        attention_outputs = self.attention(
-            hidden_states,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            output_attentions=output_attentions
+        self.output = nn.Sequential(
+            nn.Linear(config.hidden_size, config.hidden_size),
+            nn.Dropout(config.hidden_dropout_prob)
         )
-        attention_output = attention_outputs[0]
 
-        # MoE
-        intermediate_output = self.intermediate(attention_output)
+    def forward(self, hidden_states, **kwargs):
+        attention_output = self.attention(hidden_states, **kwargs)[0]
+        intermediate_output = self.intermediate(attention_output)  # теперь [B, S, hidden_size]
         layer_output = self.output(intermediate_output, attention_output)
-
-        # возвращаем tuple как обычный BertLayer
-        outputs = (layer_output,) + attention_outputs[1:]
-        return outputs
+        return (layer_output, )
 
 
 class BertMoEEncoder(BertEncoder):

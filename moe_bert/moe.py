@@ -65,36 +65,14 @@ class BertMoELayer(BertLayer):
     def __init__(self, config):
         super().__init__(config)
         self.attention = BertAttention(config)
-        self.intermediate = MoEBlock(
-            config,
-            num_experts=getattr(config, "num_experts", 4)
-        )
+        self.intermediate = MoEBlock(config, num_experts=config.num_experts if hasattr(config, "num_experts") else 4)
         self.output = BertOutput(config)
 
-    def forward(
-        self,
-        hidden_states,
-        attention_mask=None,
-        head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        output_attentions=False,
-    ):
-        attention_outputs = self.attention(
-            hidden_states,
-            attention_mask,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-        )
-        attention_output = attention_outputs[0]
-
+    def forward(self, hidden_states, **kwargs):  # просто игнорируем лишние аргументы
+        attention_output = self.attention(hidden_states, **kwargs)[0]  # используем только нужные outputs
         intermediate_output = self.intermediate(attention_output)
-
         layer_output = self.output(intermediate_output, attention_output)
-
-        outputs = (layer_output,) + attention_outputs[1:]  # сохраним все дополнительные выходы, если есть
-        return outputs
-
+        return (layer_output, )
 
 
 class BertMoEEncoder(BertEncoder):

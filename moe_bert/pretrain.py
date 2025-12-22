@@ -1,4 +1,3 @@
-# train.py (обновлённая версия — без предварительной токенизации всего датасета)
 import os
 from datasets import load_dataset
 from transformers import (
@@ -17,7 +16,6 @@ def main():
     set_seed(42)
     cfg = PretrainConfig()
 
-    # --- Модель и токенизатор ---
     model_config = BertConfig(
         vocab_size=30522,
         hidden_size=cfg.bert_hidden_size,
@@ -40,47 +38,41 @@ def main():
     print(f"Model initialized with {cfg.num_experts} experts.")
     print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # --- ЗАГРУЗКА ДАТАСЕТА В STREAMING РЕЖИМЕ ---
     print("Loading dataset in streaming mode...")
     dataset = load_dataset(
         cfg.dataset_name,
         cfg.dataset_config,
         split="train",
-        streaming=True  # 🔥 ключевое изменение!
+        streaming=True
     )
 
-    # --- ФУНКЦИЯ ТОКЕНИЗАЦИИ (будет применяться лениво) ---
     def tokenize_function(examples):
         return tokenizer(
             examples[cfg.text_column],
             truncation=True,
-            padding=False,  # collator сам сделает padding до batch max
+            padding=False,
             max_length=cfg.seq_len,
             return_special_tokens_mask=True,
         )
 
-    # Применяем токенизацию и удаляем ВСЕ исходные колонки
-    original_columns = dataset.column_names  # ['id', 'text', 'url'] — для wikipedia
+    original_columns = dataset.column_names
     tokenized_dataset = dataset.map(
         tokenize_function,
         batched=True,
-        remove_columns=original_columns,  # ← удаляем ВСЁ, кроме output tokenizer'а
+        remove_columns=original_columns,
     )
 
-    # --- Фильтрация слишком коротких примеров (опционально, но осторожно в streaming!) ---
     def filter_short(example):
         return len(example["input_ids"]) >= cfg.seq_len // 2
 
     tokenized_dataset = tokenized_dataset.filter(filter_short)
 
-    # --- Data collator ---
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=True,
         mlm_probability=cfg.masking_prob,
     )
 
-    # --- Training args ---
     training_args = TrainingArguments(
         output_dir=cfg.output_dir,
         overwrite_output_dir=True,
@@ -95,27 +87,23 @@ def main():
         save_strategy="steps",
         load_best_model_at_end=False,
         fp16=True,
-        dataloader_num_workers=2,  # можно 0–4, но в streaming лучше 0–2
+        dataloader_num_workers=2,
         remove_unused_columns=False,
         report_to="none",
-        # ⚠️ ВАЖНО: отключаем shuffle для streaming (или используем буфер)
         dataloader_drop_last=True,
     )
 
-    # --- Создаём Trainer ---
     trainer = Trainer(
         model=model,
         args=training_args,
-        train_dataset=tokenized_dataset,  # ← streaming dataset!
+        train_dataset=tokenized_dataset,
         data_collator=data_collator,
         tokenizer=tokenizer,
     )
 
-    # --- Обучение ---
     print("Starting pretraining (streaming)...")
     trainer.train()
 
-    # --- Сохранение ---
     final_dir = os.path.join(cfg.output_dir, "final_model")
     trainer.save_model(final_dir)
     tokenizer.save_pretrained(final_dir)

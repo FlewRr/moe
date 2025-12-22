@@ -41,23 +41,23 @@ class MoEFFN(nn.Module):
         batch_size, seq_len, hidden_dim = hidden_states.shape
         assert hidden_dim == self.hidden_size
 
-        x = hidden_states.view(-1, hidden_dim)  # [N, H]
-        gate_logits = self.gate(x)  # [N, E]
-        top_k_logits, top_k_indices = torch.topk(gate_logits, self.k, dim=1)  # [N, k]
-        top_k_weights = torch.softmax(top_k_logits, dim=1)  # [N, k]
+        x = hidden_states.view(-1, hidden_dim)
+        gate_logits = self.gate(x)
+        top_k_logits, top_k_indices = torch.topk(gate_logits, self.k, dim=1)
+        top_k_weights = torch.softmax(top_k_logits, dim=1
 
         final_output = torch.zeros_like(x)
 
         for i in range(self.num_experts):
-            expert_mask = (top_k_indices == i)  # [N, k]
+            expert_mask = (top_k_indices == i)
             if expert_mask.any():
-                token_indices = expert_mask.nonzero(as_tuple=True)[0]  # [M]
-                pos_in_topk = expert_mask.nonzero(as_tuple=True)[1]    # [M]
+                token_indices = expert_mask.nonzero(as_tuple=True)[0]
+                pos_in_topk = expert_mask.nonzero(as_tuple=True)[1]
 
-                expert_inputs = x[token_indices]  # [M, H]
-                expert_weights = top_k_weights[token_indices, pos_in_topk]  # [M]
-                expert_out = self.experts[i](expert_inputs)  # [M, H]
-                weighted_out = expert_out * expert_weights.unsqueeze(-1)  # [M, H]
+                expert_inputs = x[token_indices]
+                expert_weights = top_k_weights[token_indices, pos_in_topk]
+                expert_out = self.experts[i](expert_inputs)
+                weighted_out = expert_out * expert_weights.unsqueeze(-1)
 
                 final_output.index_add_(0, token_indices, weighted_out)
 
@@ -70,19 +70,17 @@ import torch.nn as nn
 class BertLayerWithMoE(BertLayer):
     def __init__(self, config):
         super().__init__(config)
-        # Удаляем стандартный FFN
         del self.intermediate
         del self.output
 
         self.moe_ffn = MoEFFN(
             hidden_size=config.hidden_size,
             num_experts=getattr(config, "num_experts", 4),
-            expert_size=config.intermediate_size,  # используется внутри MoE
+            expert_size=config.intermediate_size,
             k=getattr(config, "moe_k", 2),
             dropout_prob=config.hidden_dropout_prob,
         )
 
-        # Вместо BertOutput — создаём свой простой LayerNorm + Dropout
         self.moe_output_layer_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.moe_output_dropout = nn.Dropout(config.hidden_dropout_prob)
 
@@ -104,9 +102,8 @@ class BertLayerWithMoE(BertLayer):
         )
         attn_output = self_attn_output[0]
 
-        moe_output = self.moe_ffn(attn_output)  # [B, L, hidden_size]
+        moe_output = self.moe_ffn(attn_output)
 
-        # Residual + Dropout + LayerNorm (как в оригинальном BERT)
         moe_output = self.moe_output_dropout(moe_output)
         layer_output = self.moe_output_layer_norm(attn_output + moe_output)
 
@@ -119,7 +116,6 @@ class BertMoEForMaskedLM(BertPreTrainedModel):
         super().__init__(config)
         self.config = config
 
-        # Создаём BERT и заменяем слои на MoE
         self.bert = BertModel(config, add_pooling_layer=False)
         for layer in self.bert.encoder.layer:
             layer.__class__ = BertLayerWithMoE
@@ -142,7 +138,6 @@ class BertMoEForMaskedLM(BertPreTrainedModel):
         labels=None,
         **kwargs,
     ):
-        # Передаём ТОЛЬКО поддерживаемые аргументы в BertModel
         bert_kwargs = {
             k: v for k, v in {
                 "input_ids": input_ids,

@@ -19,7 +19,6 @@ class PretrainConfig:
     logging_steps = 100
     eval_steps = 2000
 
-    # BERT / MoE параметры
     bert_hidden_size = 256
     bert_intermediate_size = 1024
     bert_num_hidden_layers = 4
@@ -28,14 +27,12 @@ class PretrainConfig:
 
 
 class ClassificationConfig:
-    # Пути
-    backbone_path = "./final_model/pytorch_model.bin"  # или ваш .pt файл
-    dataset_path = "your_dataset"  # например, "json", "csv", или HuggingFace dataset
+    backbone_path = "./final_model/pytorch_model.bin"
+    dataset_path = "your_dataset"
     dataset_split = "train"
     text_column = "text"
-    label_columns = ["label1", "label2", "label3", "label4", "label5", "label6"]  # ← 6 меток
+    label_columns = ["label1", "label2", "label3", "label4", "label5", "label6"]
 
-    # Модель
     num_labels = 6
     tokenizer = "bert-base-uncased"
     hidden_size = 256
@@ -44,7 +41,6 @@ class ClassificationConfig:
     intermediate_size = 1024
     num_experts = 4
 
-    # Обучение
     output_dir = "./cls_output"
     seq_len = 128
     batch_size = 32

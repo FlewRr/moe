@@ -1,4 +1,3 @@
-# moe.py
 import torch
 import torch.nn as nn
 from typing import Optional
@@ -44,7 +43,7 @@ class MoEFFN(nn.Module):
         x = hidden_states.view(-1, hidden_dim)
         gate_logits = self.gate(x)
         top_k_logits, top_k_indices = torch.topk(gate_logits, self.k, dim=1)
-        top_k_weights = torch.softmax(top_k_logits, dim=1
+        top_k_weights = torch.softmax(top_k_logits, dim=1)
 
         final_output = torch.zeros_like(x)
 

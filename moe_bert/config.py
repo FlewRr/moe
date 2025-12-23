@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import List
 
 class PretrainConfig:
     model_name = "your-moe-bert"

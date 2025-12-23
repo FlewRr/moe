@@ -91,6 +91,7 @@ def main():
         remove_unused_columns=False,
         report_to="none",
         dataloader_drop_last=True,
+        save_safetensors=False
     )
 
     trainer = Trainer(

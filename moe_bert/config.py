@@ -1,3 +1,5 @@
+from dataclasses import dataclass, field
+
 class PretrainConfig:
     model_name = "your-moe-bert"
     dataset_name = "wikimedia/wikipedia"

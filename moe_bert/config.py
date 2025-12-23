@@ -53,6 +53,7 @@ class ClassificationConfig:
     save_steps = 500
     eval_steps = 500
 
+@dataclass
 class ImprovedMultiLabelConfig:
     pretrained_mlm_path: str = "final_model"
     
